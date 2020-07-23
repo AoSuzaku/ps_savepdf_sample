@@ -1,11 +1,12 @@
-﻿##################################################
+﻿######################################################################
 #
 #　Excel⇒PDF変換ツール
 #
 #　変更履歴
 #　　・2020/07/15　新規作成
+#　　・2020/07/21　クラス：PrntrCnf（プリンター情報設定／取得）を追加
 #
-##################################################
+######################################################################
 
 # ps1ファイルの格納先を取得
 [string]$dir = Split-Path $myInvocation.MyCommand.Path -Parent
@@ -21,14 +22,16 @@ class Main{
     [string]$ePath
     [string]$pPath
     [object]$savePdf
+    [object]$prntrCnf
 
-    # インスタンス
+    # コンストラクタ
     Main([string]$inDir){
 
         $this.dir = $inDir
         $this.ePath = Read-Host "PDF変換を行うExcelファイルの格納先を指定してください。"
         $this.pPath = Read-Host "PDFファイルの出力先を指定してください。"
         $this.savePdf = New-Object SavePdf($this.ePath, $this.pPath, $this.dir)
+        $this.prntrCnf = New-Object PrntrCnf
 
     }
 
@@ -53,19 +56,29 @@ class Main{
             # ファイル数カウント
             $this.savePdf.CountFile()
 
+            # プリンター設定情報取得
+            $this.prntrCnf.GetPrntr()
+            
+            # プリンター設定情報変更
+            $this.prntrCnf.SetPrntr("Microsoft XPS Document Writer")
+
             # Excel→PDF変換
             $this.savePdf.ChangePdf()
 
+            # プリンター設定情報変更
+            $this.prntrCnf.SetPrntr($this.prntrCnf.default)
+            $this.prntrCnf.ResetObj()
+
             # エラー結果出力
             $this.savePdf.OutputErrFile()
-        
-        }catch{
-        
-        }finally{
 
             # 終了処理
             $this.savePdf.WatchTime($false)
             $this.savePdf.ExeEnd()
+        
+        }catch{
+        
+            Write-Host "処理中にエラーが発生しました。"
         
         }
     
@@ -88,13 +101,12 @@ class SavePdf{
     # 配列宣言
     [string]$errMsg = @()
     
-    # インスタンス
+    # コンストラクタ
     SavePdf([string]$path1, [string]$path2, [string]$path3){
     
         $this.ePath = $path1
         $this.pPath = $path2
         $this.dir = $path3
-        $this.watch = New-Object System.Diagnostics.Stopwatch
 
     }
     
@@ -104,12 +116,12 @@ class SavePdf{
         # 入力チェック
         if($this.ePath -eq ""){
 
-            echo "Excelファイルの格納先が入力されていません。"
+            Write-Host "Excelファイルの格納先が入力されていません。"
             return $false
 
         }elseif($this.pPath -eq ""){
         
-            echo "PDFファイルの出力先が入力されていません。"
+            Write-Host "PDFファイルの出力先が入力されていません。"
             return $false
 
         }
@@ -117,12 +129,12 @@ class SavePdf{
         # パス存在チェック
         if(!(Test-Path $this.ePath)){
 
-            echo "Excelファイルの格納先が存在しません。"
+            Write-Host "Excelファイルの格納先が存在しません。"
             return $false
 
         }elseif(!(Test-Path $this.pPath)){
 
-            echo "PDFファイルの出力先が存在しません。"
+            Write-Host "PDFファイルの出力先が存在しません。"
             return $false
 
         }
@@ -157,7 +169,7 @@ class SavePdf{
                 # 処理カウント
                 [int]$cnt += 1
                 [string]$status = "{0}／$($this.totalFile)件処理中" -F $cnt
-                Write-Progress $status -PercentComplete $cnt -CurrentOperation $currentOperation
+                Write-Progress $status -PercentComplete ($cnt/$this.totalFile*100) -CurrentOperation $currentOperation
 
                 # サブフォルダ配下のパス
                 [string]$childPath = $_
@@ -213,6 +225,7 @@ class SavePdf{
         # 計測開始
         if($wFlg){
 
+            $this.watch = New-Object System.Diagnostics.Stopwatch
             $this.watch.Start()
         
         # 計測終了
@@ -239,5 +252,42 @@ class SavePdf{
         [GC]::Collect()
     
     }
+
+}
+
+class PrntrCnf{
+
+	# 変数宣言
+	[string]$default
+	[object]$pd
+
+	# コンストラクタ
+	PrntrCnf(){
+	
+		Add-Type -Assembly System.Drawing
+		$this.pd = New-Object System.Drawing.Printing.PrintDocument
+
+	}
+
+	# プリンター設定取得
+	[void]GetPrntr(){
+
+		$this.default = $this.pd.Name
+
+	}
+	
+	# プリンター設定
+	[void]SetPrntr([string]$prntr){
+	
+		(Get-WmiObject -ComputerName . -Class Win32_Printer -Filter "Name='$($prntr)'").SetDefaultPrinter()
+	
+	}
+	
+	# オブジェクト初期化
+	[void]ResetObj(){
+	
+		$this.pd = $null
+	
+	}
 
 }
